@@ -15,12 +15,21 @@ services:
       - DATABASE_URL=postgresql://preflight:preflight_secure_pass@postgres:5432/preflight_db
       - REDIS_URL=redis://redis:6379/0
       
-      # External APIs - Weather
-      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
-      - NOAA_API_ENABLED=true
+      # MCP Server URLs (Model Context Protocol)
+      - OPENMETEO_MCP_SERVER_URL=http://openmeteo-mcp:3000
+      - AVIATIONSTACK_MCP_SERVER_URL=http://aviationstack-mcp:3001
       
-      # External APIs - Flight Tracking
+      # MCP Connection Settings
+      - MCP_CONNECTION_TIMEOUT=5
+      - MCP_REQUEST_TIMEOUT=30
+      
+      # API Keys (for MCP fallback)
       - AVIATIONSTACK_API_KEY=${AVIATIONSTACK_API_KEY}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+      
+      # Legacy API Keys (deprecated - using MCP servers now)
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
+      - NOAA_API_ENABLED=false
       
       # External APIs - Notifications
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
@@ -43,6 +52,8 @@ services:
       - redis
       - langflow
       - ollama
+      - openmeteo-mcp
+      - aviationstack-mcp
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/"]
@@ -63,6 +74,39 @@ services:
     stdin_open: true
     tty: true
     restart: unless-stopped
+
+  # ============================================================================
+  # MCP Server Services (Model Context Protocol)
+  # ============================================================================
+
+  openmeteo-mcp:
+    build: ./mcp-servers/openmeteo
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  aviationstack-mcp:
+    build: ./mcp-servers/aviationstack
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - AVIATIONSTACK_API_KEY=${AVIATIONSTACK_API_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # ============================================================================
   # AI & ML Services

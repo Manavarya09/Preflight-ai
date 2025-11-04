@@ -24,13 +24,28 @@ from database.models import (
     WeatherSnapshot,
 )
 
-# External API imports
-from external_apis import (
-    AviationStackClient,
-    AviationStackError,
-    OpenMeteoClient,
-    OpenMeteoError,
-)
+# MCP Client imports (with fallback to legacy API clients)
+try:
+    from mcp_clients import (
+        OpenMeteoMCPClient,
+        OpenMeteoMCPError,
+        AviationStackMCPClient,
+        AviationStackMCPError,
+        GoogleMapsMCPClient,
+        GoogleMapsMCPError,
+    )
+    from mcp_clients.mcp_config import MCPConfig
+    USE_MCP_CLIENTS = True
+except ImportError:
+    # Fallback to legacy API clients
+    from external_apis import (
+        AviationStackClient,
+        AviationStackError,
+        OpenMeteoClient,
+        OpenMeteoError,
+    )
+    USE_MCP_CLIENTS = False
+    print("Warning: MCP clients not available, using legacy API clients")
 
 app = FastAPI(
     title="PreFlight AI API",
@@ -46,21 +61,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize API clients
-aviation_client = AviationStackClient()
-weather_client = OpenMeteoClient()
+# Initialize MCP clients or legacy API clients
+if USE_MCP_CLIENTS:
+    # Initialize MCP clients with configuration
+    weather_client = OpenMeteoMCPClient(
+        mcp_server_url=MCPConfig.OPENMETEO_MCP_SERVER_URL
+    )
+    aviation_client = AviationStackMCPClient(
+        mcp_server_url=MCPConfig.AVIATIONSTACK_MCP_SERVER_URL,
+        api_key=MCPConfig.AVIATIONSTACK_API_KEY
+    )
+    googlemaps_client = GoogleMapsMCPClient(
+        api_key=MCPConfig.GOOGLE_MAPS_API_KEY
+    )
+    print("✓ MCP clients initialized successfully")
+else:
+    # Fallback to legacy API clients
+    aviation_client = AviationStackClient()
+    weather_client = OpenMeteoClient()
+    googlemaps_client = None
+    print("✓ Legacy API clients initialized")
 
 
 @app.get("/")
 def root():
+    """Root endpoint with service status."""
+    services_status = {
+        "database": "connected",
+        "weather_api": "Open-Meteo MCP" if USE_MCP_CLIENTS else "Open-Meteo Direct",
+        "flight_api": "AviationStack MCP" if USE_MCP_CLIENTS else "AviationStack Direct",
+        "google_maps": "Enabled (MCP)" if (USE_MCP_CLIENTS and googlemaps_client and googlemaps_client.is_enabled()) else "Disabled",
+    }
+    
     return {
         "message": "PreFlight AI backend running",
         "version": "2.0",
-        "services": {
-            "database": "connected",
-            "weather_api": "Open-Meteo",
-            "flight_api": "AviationStack",
-        },
+        "architecture": "MCP-based" if USE_MCP_CLIENTS else "Legacy",
+        "services": services_status,
     }
 
 
@@ -68,10 +105,17 @@ def root():
 def health_check(db: Session = Depends(get_db)):
     """Comprehensive health check for all services."""
     health_status = check_connections()
-
+    
+    # Add MCP client health checks
+    if USE_MCP_CLIENTS:
+        health_status["mcp_openmeteo"] = weather_client.use_mcp
+        health_status["mcp_aviationstack"] = aviation_client.use_mcp
+        health_status["mcp_googlemaps"] = googlemaps_client.is_enabled() if googlemaps_client else False
+        
     return {
-        "status": "healthy" if all(health_status.values()) else "degraded",
+        "status": "healthy" if all([v for k, v in health_status.items() if k.startswith("db_")]) else "degraded",
         "timestamp": datetime.now().isoformat(),
+        "architecture": "MCP-based" if USE_MCP_CLIENTS else "Legacy",
         "services": health_status,
     }
 
@@ -156,8 +200,10 @@ def get_current_weather(airport_code: str, db: Session = Depends(get_db)):
 
         return weather_data
 
-    except OpenMeteoError as e:
-        raise HTTPException(status_code=500, detail=f"Weather API error: {str(e)}")
+    except Exception as e:
+        # Handle both MCP and legacy errors
+        error_msg = f"Weather API error: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @app.get("/weather/forecast/{airport_code}")
@@ -181,8 +227,9 @@ def get_weather_forecast(
             "forecasts": forecast_data,
         }
 
-    except OpenMeteoError as e:
-        raise HTTPException(status_code=500, detail=f"Weather API error: {str(e)}")
+    except Exception as e:
+        error_msg = f"Weather API error: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @app.get("/weather/aviation-briefing/{airport_code}")
@@ -197,8 +244,9 @@ def get_aviation_briefing(airport_code: str):
         briefing = weather_client.get_aviation_weather_briefing(airport_code)
         return briefing
 
-    except OpenMeteoError as e:
-        raise HTTPException(status_code=500, detail=f"Weather API error: {str(e)}")
+    except Exception as e:
+        error_msg = f"Weather API error: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 # ========== FLIGHT TRACKING API ENDPOINTS ==========
@@ -238,8 +286,9 @@ def get_real_time_flights(
             "flights": flights,
         }
 
-    except AviationStackError as e:
-        raise HTTPException(status_code=500, detail=f"Flight tracking error: {str(e)}")
+    except Exception as e:
+        error_msg = f"Flight tracking error: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @app.get("/flights/historical")
@@ -277,8 +326,9 @@ def get_historical_flights(
             "flights": flights,
         }
 
-    except AviationStackError as e:
-        raise HTTPException(status_code=500, detail=f"Flight tracking error: {str(e)}")
+    except Exception as e:
+        error_msg = f"Flight tracking error: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @app.get("/flights/route-statistics")
@@ -316,8 +366,9 @@ def get_route_statistics(
             "sample_flights": route_history[:5],  # First 5 flights as samples
         }
 
-    except AviationStackError as e:
-        raise HTTPException(status_code=500, detail=f"Flight tracking error: {str(e)}")
+    except Exception as e:
+        error_msg = f"Flight tracking error: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @app.get("/flights/airport-info/{airport_code}")
@@ -327,8 +378,9 @@ def get_airport_info(airport_code: str):
         airport_info = aviation_client.get_airport_info(airport_code)
         return airport_info
 
-    except AviationStackError as e:
-        raise HTTPException(status_code=500, detail=f"Flight tracking error: {str(e)}")
+    except Exception as e:
+        error_msg = f"Flight tracking error: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 # ========== ENHANCED PREDICTION ENDPOINTS ==========
@@ -440,8 +492,13 @@ def enhanced_prediction(
             "prediction_id": prediction.id,
         }
 
-    except (OpenMeteoError, AviationStackError) as e:
-        raise HTTPException(status_code=500, detail=f"External API error: {str(e)}")
+    except Exception as e:
+        # Handle both MCP and legacy API errors
+        if "External API error" not in str(e):
+            error_msg = f"External API error: {str(e)}"
+        else:
+            error_msg = str(e)
+        raise HTTPException(status_code=500, detail=error_msg)
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
@@ -525,38 +582,74 @@ def get_airport_location_data(
 ):
     """
     Get comprehensive airport location data with timezone information.
+    Requires Google Maps API key.
     
     Args:
         airport_code: IATA airport code (e.g., DXB, LHR, JFK)
         force_refresh: Force refresh from Google Maps API
     """
-    from services.location_service import LocationService
-    from external_apis import GoogleMapsError
-    
-    try:
-        location_service = LocationService(db)
-        location_data = location_service.get_airport_location(
-            airport_code,
-            force_refresh=force_refresh
-        )
-        
-        if not location_data:
+    if USE_MCP_CLIENTS and googlemaps_client:
+        # Use MCP Google Maps client if available
+        if not googlemaps_client.is_enabled():
             raise HTTPException(
-                status_code=404,
-                detail=f"Airport {airport_code} not found"
+                status_code=503,
+                detail="Google Maps service not available (API key required)"
             )
         
-        return {
-            "airport_code": airport_code.upper(),
-            "location": location_data,
-            "from_cache": not force_refresh
-        }
+        try:
+            location_data = googlemaps_client.get_airport_location(
+                airport_code,
+                db_session=db,
+                force_refresh=force_refresh
+            )
+            
+            if not location_data:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Airport {airport_code} not found"
+                )
+            
+            return {
+                "airport_code": airport_code.upper(),
+                "location": location_data,
+                "from_cache": not force_refresh,
+                "source": "GoogleMaps_MCP"
+            }
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Location service error: {str(e)}"
+            )
+    else:
+        # Fallback to legacy location service
+        from services.location_service import LocationService
         
-    except GoogleMapsError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Location service error: {str(e)}"
-        )
+        try:
+            location_service = LocationService(db)
+            location_data = location_service.get_airport_location(
+                airport_code,
+                force_refresh=force_refresh
+            )
+            
+            if not location_data:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Airport {airport_code} not found"
+                )
+            
+            return {
+                "airport_code": airport_code.upper(),
+                "location": location_data,
+                "from_cache": not force_refresh,
+                "source": "GoogleMaps_Direct"
+            }
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Location service error: {str(e)}"
+            )
 
 
 @app.get("/location/route-distance")
