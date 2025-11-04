@@ -8,16 +8,9 @@
     "@fontsource/lora": "^4.5.10",
     "@fontsource/monda": "^4.5.8",
     "@fontsource/sirin-stencil": "^4.5.2",
-<<<<<<< HEAD
     "@testing-library/jest-dom": "^5.16.2",
     "@testing-library/react": "^12.1.4",
     "@testing-library/user-event": "^13.5.0",
-=======
-    "@splinetool/react-spline": "^4.1.0",
-    "@testing-library/jest-dom": "^6.0.0",
-    "@testing-library/react": "^14.0.0",
-    "@testing-library/user-event": "^14.4.3",
->>>>>>> 9c7ed0b (updated react scripts)
     "ajv": "^8.17.1",
     "framer-motion": "^6.2.8",
     "gsap": "^3.12.2",
