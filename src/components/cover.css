@@ -1,0 +1,131 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans&display=swap');
+
+
+@font-face {
+    font-family: boldgod;
+    src: url(/src/assets/font/Specify\ PERSONAL\ Expanded\ Bold.woff);
+}
+.cover-head-vid{
+    font-family: boldgod;
+    text-transform: uppercase;
+    font-size: 3em;
+    font-weight: bold;
+    line-height: 1;
+    color: whitesmoke;
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+}
+.suit-yell{
+    color: rgb(187, 255, 0);
+}
+.meta-yell{
+    color: rgb(187, 255, 0);
+}
+.welcome{
+    color: whitesmoke;
+    font-family: 'Noto Sans', sans-serif;
+    text-transform: uppercase;
+    position: absolute;
+    top: -70px;
+    left: 0%;
+    font-size: 0.85rem;
+    letter-spacing: 1px;
+    margin-bottom: 0;
+}
+.carousel {
+    z-index: 10;
+    position: absolute;
+    max-width: 150px;
+    height: 150px; 
+    left: 3%;
+    top: 64%;
+}
+.rot-pic-one{
+    object-fit: contain;
+    height: 100%;
+    width: 100%;
+}
+.rot-pic-two{
+    object-fit: contain;
+    height: 100%;
+    width: 100%;
+}
+.rot-pic-three{
+    object-fit: contain;
+    height: 100%;
+    width: 100%;
+}
+.carousel-two {
+    z-index: 10;
+    position: absolute; 
+    max-width: 500px;
+    height: 550px; 
+    left: 60%;
+    top: 50px;
+}
+.ric{
+    object-fit: contain;
+    height: 100%;
+    width: 100%;
+}
+.scan-me{
+    color: rgb(180, 180, 180);
+    font-size: 0.95em;
+    font-family: 'Noto Sans', sans-serif;
+    line-height: 1.4;
+    margin-bottom: 0;
+    white-space: nowrap;
+  
+}
+.arrn{
+    color: rgb(187, 255, 0);
+}
+.power-by{
+    color: rgb(180, 180, 180);
+    font-size: 0.95em;
+    font-family: 'Noto Sans', sans-serif;
+    line-height: 1.4;
+    position: relative;
+    left: 0px;
+    top: 0px;
+    margin-top: 0rem;
+    white-space: nowrap;
+}
+.water{
+    position: relative;
+    left: 0px;
+    top: 0px;
+    height: 60px;
+    width: auto;
+    margin-left: 1rem;
+}
+.hover-pic-one{
+    height: 65px;
+    width: 65px; 
+    margin-right: 0;
+    border-radius: 10px;
+    border: 2px solid transparent;
+}
+.hover-pic-two{
+    height: 65px;
+    width: 65px; 
+    margin-right: 0;
+    border-radius: 10px;
+    border: 2px solid rgb(187, 255, 0);
+}
+.hover-pic-three{
+    height: 65px;
+    width: 65px; 
+    margin-right: 0;
+    border-radius: 10px;
+    border: 2px solid transparent;
+}
+.hover-pic-one:hover{
+    border: 5px solid rgb(187, 255, 0);
+}
+.hover-pic-two:hover{
+    border: 5px solid rgb(187, 255, 0);
+}
+.hover-pic-three:hover{
+    border: 5px solid rgb(187, 255, 0);
+}
