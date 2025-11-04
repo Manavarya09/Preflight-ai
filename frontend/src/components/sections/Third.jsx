@@ -55,9 +55,9 @@ const Third = () => {
        data-scroll-speed="1"
        style={{ transform: 'translate3d(0, 0, 0)' }}>
         
-        <div class="row">
-        <div class="col col1">
-        <img className="mint-vr" src={ATR01} alt="" />
+  <div className="row">
+  <div className="col col1">
+  <img className="mint-vr" src={ATR01} alt="" />
         <p className="fut-des">
           In <span className="q-yell">Q3 of 2022</span>, the PreFlight AI genesis <br />
           NFT collection of 10,000 hand- <br />
@@ -65,8 +65,8 @@ const Third = () => {
         </p>
         </div>
 
-        <div class="col col2">
-        <img className="mint-vr" src={ATR02} alt="" />        
+  <div className="col col2">
+  <img className="mint-vr" src={ATR02} alt="" />        
         <p className="fut-des">
           In <span className="q-yell">Q3 of 2022</span>, the PreFlight AI genesis <br />
           NFT collection of 10,000 hand- <br />
@@ -74,8 +74,8 @@ const Third = () => {
         </p>
         </div>
 
-        <div class="col col3">
-        <img className="mint-vr" src={ATR03} alt="" />        
+  <div className="col col3">
+  <img className="mint-vr" src={ATR03} alt="" />        
         <p className="fut-des">
           In <span className="q-yell">Q3 of 2022</span>, the PreFlight AI genesis <br />
           NFT collection of 10,000 hand- <br />
@@ -83,8 +83,8 @@ const Third = () => {
         </p>
         </div>
 
-        <div class="col col4">
-        <img className="mint-vr" src={ATR04} alt="" />        
+  <div className="col col4">
+  <img className="mint-vr" src={ATR04} alt="" />        
         <p className="fut-des">
           In <span className="q-yell">Q3 of 2022</span>, the PreFlight AI genesis <br />
           NFT collection of 10,000 hand- <br />

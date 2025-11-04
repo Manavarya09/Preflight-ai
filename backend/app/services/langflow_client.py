@@ -8,14 +8,13 @@ LANGFLOW_URL = os.getenv(
 
 def generate_explanation(shap_values: dict):
     try:
-        text = f"Explain flight delay factors: {shap_values}"
-        resp = requests.post(LANGFLOW_URL, json={"inputs": text}, timeout=10)
+        payload = {"inputs": shap_values}
+        resp = requests.post(LANGFLOW_URL, json=payload, timeout=15)
         if not resp.ok:
-            return f"Langflow responded with status {resp.status_code}"
-        payload = resp.json()
-        outputs = payload.get("outputs") or payload.get("data") or []
-        if isinstance(outputs, list) and outputs:
-            return outputs[0]
-        return "No explanation available"
+            return {
+                "error": f"Langflow responded with status {resp.status_code}",
+                "details": resp.text,
+            }
+        return resp.json()
     except Exception as exc:
-        return f"Langflow not reachable: {exc}"
+        return {"error": f"Langflow not reachable: {exc}"}

@@ -53,11 +53,11 @@ const Faq = () => {
         data-scroll-speed="1"
         style={{ transform: 'translate3d(0, 0, 0)' }}
       > 
-      <section class="accordion">
+      <section className="accordion">
       <input type="checkbox" name="collapse" id="handle1">
       </input>
-      <h2 class="handle">
-        <label for="handle1">How does PreFlight AI know when a flight might be delayed?
+      <h2 className="handle">
+        <label htmlFor="handle1">How does PreFlight AI know when a flight might be delayed?
           <span className="pl">+</span>
         </label>
       </h2>

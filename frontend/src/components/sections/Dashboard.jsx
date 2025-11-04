@@ -1326,9 +1326,11 @@ const Dashboard = () => {
                     AI Explanation {loadingScore ? '(updating...)' : ''}
                   </div>
                   <div>
-                    {scoreDetails?.explanation
-                      ? explanationText
-                      : `${selectedFlight.reason} is the primary delay driver. High winds and gate congestion are increasing delay risk. System recommends proactive crew notification.`}
+                    {scoreDetails?.explanation && typeof scoreDetails.explanation === 'object' && scoreDetails.explanation.error
+                      ? `Error: ${scoreDetails.explanation.error}`
+                      : scoreDetails?.explanation
+                        ? explanationText
+                        : `${selectedFlight.reason} is the primary delay driver. High winds and gate congestion are increasing delay risk. System recommends proactive crew notification.`}
                   </div>
                 </div>
 

@@ -1,0 +1,104 @@
+{
+  "name": "PreFlight_AI_Reasoner_Router",
+  "description": "Advanced Langflow flow for PreFlight AI that classifies flight risk and explains causes using Ollama.",
+  "nodes": [
+    {
+      "id": "input_1",
+      "type": "Input",
+      "name": "Incoming_SHAP_Data",
+      "fields": {
+        "input_type": "json",
+        "example_input": "{\"delay_prob\": 0.72, \"crosswind\": 0.23, \"visibility\": -0.12, \"atc\": 0.09}"
+      },
+      "outputs": ["router_1"]
+    },
+    {
+      "id": "router_1",
+      "type": "RouterNode",
+      "name": "Risk_Classifier",
+      "fields": {
+        "condition_code": "def route(inputs):\n    prob = inputs.get('text', {}).get('delay_prob', 0)\n    if prob >= 0.6:\n        return 'High_Risk'\n    else:\n        return 'Low_Risk'\n    ",
+        "routes": ["High_Risk", "Low_Risk"]
+      },
+      "inputs": ["input_1"],
+      "outputs": ["python_high", "python_low"]
+    },
+    {
+      "id": "python_high",
+      "type": "PythonNode",
+      "name": "Process_High_Risk",
+      "fields": {
+        "code": "def process_high(inputs):\n    shap = inputs.get('text', {})\n    summary = ', '.join([f\"{k} ({v:+.2f})\" for k, v in shap.items() if k != 'delay_prob'])\n    return {'context': f\"High risk flight with delay probability {shap.get('delay_prob', 0):.2f}. Key delay factors: {summary}\"}\",
+        "input_var": "text",
+        "output_var": "context"
+      },
+      "inputs": ["router_1"],
+      "outputs": ["llm_high"]
+    },
+    {
+      "id": "python_low",
+      "type": "PythonNode",
+      "name": "Process_Low_Risk",
+      "fields": {
+        "code": "def process_low(inputs):\n    shap = inputs.get('text', {})\n    summary = ', '.join([f\"{k} ({v:+.2f})\" for k, v in shap.items() if k != 'delay_prob'])\n    return {'context': f\"Low risk flight with delay probability {shap.get('delay_prob', 0):.2f}. Key factors: {summary}\"}\",
+        "input_var": "text",
+        "output_var": "context"
+      },
+      "inputs": ["router_1"],
+      "outputs": ["llm_low"]
+    },
+    {
+      "id": "llm_high",
+      "type": "LLM",
+      "name": "Ollama_HighRisk_Model",
+      "fields": {
+        "provider": "ollama",
+        "model": "mistral",
+        "base_url": "http://localhost:11434",
+        "prompt": "You are an aviation analyst. A flight has been classified as HIGH RISK. Based on the context below, explain clearly why this flight is likely delayed and suggest operational mitigation steps.\nContext: {context}"
+      },
+      "inputs": ["python_high"],
+      "outputs": ["output_high"]
+    },
+    {
+      "id": "llm_low",
+      "type": "LLM",
+      "name": "Ollama_LowRisk_Model",
+      "fields": {
+        "provider": "ollama",
+        "model": "mistral",
+        "base_url": "http://localhost:11434",
+        "prompt": "You are an aviation analyst. A flight has been classified as LOW RISK. Based on the context below, summarize why it is unlikely to be delayed and mention any minor operational concerns.\nContext: {context}"
+      },
+      "inputs": ["python_low"],
+      "outputs": ["output_low"]
+    },
+    {
+      "id": "output_high",
+      "type": "Output",
+      "name": "High_Risk_Explanation",
+      "fields": {
+        "output_type": "text"
+      },
+      "inputs": ["llm_high"]
+    },
+    {
+      "id": "output_low",
+      "type": "Output",
+      "name": "Low_Risk_Explanation",
+      "fields": {
+        "output_type": "text"
+      },
+      "inputs": ["llm_low"]
+    }
+  ],
+  "connections": [
+    {"from": "input_1", "to": "router_1"},
+    {"from": "router_1", "to": "python_high"},
+    {"from": "router_1", "to": "python_low"},
+    {"from": "python_high", "to": "llm_high"},
+    {"from": "python_low", "to": "llm_low"},
+    {"from": "llm_high", "to": "output_high"},
+    {"from": "llm_low", "to": "output_low"}
+  ]
+}
