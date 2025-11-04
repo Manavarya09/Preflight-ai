@@ -1,288 +1,207 @@
 
 # PreFlight AI
 
-**Intelligent Flight Delay Prediction with Real-Time Weather & Flight Tracking**
+**Production-Ready Flight Delay Prediction System**
 
-PreFlight AI pairs a cinematic airline operations dashboard with a production-ready FastAPI backend,
-**Model Context Protocol (MCP)** server integration, Langflow workflow automation, and an Ollama-powered LLM 
-for explainable insights. The architecture leverages MCP servers for standardized access to weather data, 
-flight tracking, and geocoding services with automatic fallback to direct APIs.
+Enterprise-grade flight delay prediction platform with Model Context Protocol (MCP) integration, 
+real-time weather and flight tracking, AI-powered explainability, and comprehensive security features.
 
-## 🚀 Key Features
+## Architecture
 
-- ✈️ **Real-Time Flight Tracking** via AviationStack MCP Server
-- 🌤️ **Live Weather Data** via Open-Meteo MCP Server  
-- 🗺️ **Airport Geocoding** via Google Maps (optional)
-- 🤖 **AI-Powered Predictions** with Langflow + Ollama (Mistral)
-- 📊 **SHAP Explainability** for transparent ML predictions
-- 🔄 **MCP Architecture** with automatic fallback
-- 🐳 **Full Docker Compose** stack for one-command deployment
-- 📈 **PostgreSQL + Redis** for data persistence and caching
+- **Backend**: FastAPI with MCP clients, rate limiting, input validation
+- **MCP Servers**: Open-Meteo (weather), AviationStack (flights)
+- **AI Engine**: Langflow + Ollama (Mistral) for explainable predictions
+- **Database**: PostgreSQL + Redis caching
+- **Frontend**: React with real-time dashboard
+- **Security**: CORS, rate limiting, security headers, input sanitization
 
-## 📁 Project Layout
+## Key Features
+
+- Real-time flight tracking via AviationStack MCP Server
+- Live weather data via Open-Meteo MCP Server
+- AI-powered predictions with SHAP explainability
+- Model Context Protocol architecture with automatic fallback
+- Production security: rate limiting, input validation, CORS, security headers
+- Docker Compose orchestration for easy deployment
+- PostgreSQL + Redis for persistence and caching
+- Comprehensive health monitoring and error handling
+
+## Project Structure
 
 ```
 preflight-ai/
-├── backend/                  # FastAPI service + MCP clients
+├── backend/                  # FastAPI + MCP + Security
 │   ├── app/
-│   │   ├── main.py          # API endpoints (MCP-enabled)
-│   │   ├── models/          # ML models & SHAP explainability
-│   │   ├── schemas/         # Pydantic data models
-│   │   └── services/        # Langflow + location services
-│   ├── mcp_clients/         # 🆕 MCP client implementations
-│   │   ├── openmeteo_mcp_client.py    # Weather MCP client
-│   │   ├── aviationstack_mcp_client.py # Flight tracking MCP
-│   │   ├── googlemaps_mcp_client.py   # Geocoding (optional)
-│   │   └── mcp_config.py              # Centralized config
-│   ├── database/            # PostgreSQL models & migrations
-│   ├── external_apis/       # Legacy API clients (fallback)
-│   ├── requirements.txt
-│   └── Dockerfile
-├── frontend/                 # React dashboard with animations
-│   ├── src/
-│   │   ├── components/      # UI components + Locomotive Scroll
-│   │   └── utils/           # API client utilities
-│   ├── public/
-│   ├── package.json
-│   └── Dockerfile
-├── docker-compose.yml        # Full stack orchestration
-├── MCP_INTEGRATION.md        # 🆕 MCP setup guide
-└── README.md
+│   │   ├── main.py          # API endpoints
+│   │   ├── config.py        # Configuration validation
+│   │   ├── middleware/      # Security & rate limiting
+│   │   ├── models/          # ML predictor + SHAP
+│   │   ├── schemas/         # Pydantic schemas
+│   │   └── services/        # External API clients
+│   └── langflow_flow/       # Langflow definitions
+├── frontend/                 # React SPA
+│   └── src/
+│       ├── components/      # UI components
+│       └── utils/api.js     # API client
+├── docker-compose.yml        # Container orchestration
+└── .env.example              # Environment template
 ```
 
-## 📋 Prerequisites
+## Prerequisites
 
-- **Python 3.10+** (backend development)
-- **Node.js 18+** (frontend development)
-- **Docker Desktop** (or Docker Engine + Docker Compose plugin)
-- **API Keys** (optional but recommended):
-  - AviationStack API key (for flight tracking fallback)
-  - Google Maps API key (for geocoding - fully optional)
+- Docker Desktop (or Docker Engine + Docker Compose plugin)
+- API Keys (configure in `.env`):
+  - AviationStack API key (required for flight tracking)
+  - Google Maps API key (required for geocoding)
+  - Langflow URL and flow ID (for AI predictions)
 
-## 🚀 Quick Start (Docker)
+**Security Requirements:**
+- Never commit API keys to version control
+- Use environment variables or secrets management in production
+- Restrict CORS origins (no wildcards)
+- Configure rate limiting appropriately for your load
 
-### 1. Configure Environment Variables
+## Quick Start
 
-Create `.env` file in project root:
+### 1. Configure Environment
+
+Copy `.env.example` to `.env` and configure:
 
 ```env
+# Required API Keys
+AVIATIONSTACK_API_KEY=your_key_here
+GOOGLE_MAPS_API_KEY=your_key_here
+LANGFLOW_URL=http://langflow:7860/api/v1/run/your_flow_id
+
+# Security (PRODUCTION)
+ALLOWED_ORIGINS=https://yourdomain.com
+API_RATE_LIMIT_PER_MINUTE=60/minute
+APP_ENV=production
+
 # Database
 DATABASE_URL=postgresql://preflight:preflight@postgres:5432/preflight_ai
 REDIS_URL=redis://redis:6379/0
-
-# MCP Server URLs (will be added to docker-compose)
-OPENMETEO_MCP_SERVER_URL=http://openmeteo-mcp:3000
-AVIATIONSTACK_MCP_SERVER_URL=http://aviationstack-mcp:3001
-
-# API Keys (optional - enables fallback)
-AVIATIONSTACK_API_KEY=your_aviationstack_api_key
-GOOGLE_MAPS_API_KEY=your_google_maps_api_key  # Optional
-
-# Langflow
-LANGFLOW_URL=http://langflow:7860/api/v1/run/<FLOW_ID>
 ```
 
-### 2. Start All Services
+**SECURITY WARNING**: Never commit `.env` file to version control. In production, use secrets management (AWS Secrets Manager, Azure Key Vault, etc.).
+
+### 2. Deploy
 
 ```bash
-# Build and start all containers
+# Development
 docker-compose up --build
 
-# Or run in detached mode
+# Production (detached)
 docker-compose up -d --build
 ```
 
-### 3. Access Services
+### 3. Access
 
-| Service | URL | Description |
-|---------|-----|-------------|
-| **Frontend** | http://localhost:3000 | React dashboard |
-| **Backend API** | http://localhost:8000 | FastAPI + MCP clients |
-| **Langflow** | http://localhost:7860 | AI workflow builder |
-| **Ollama** | http://localhost:11434 | Local LLM (Mistral) |
-| **PostgreSQL** | localhost:5432 | Database |
-| **Redis** | localhost:6379 | Cache |
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
 
-### 4. Verify MCP Integration
-
-```bash
-# Check health status
-curl http://localhost:8000/health
-
-# Expected response includes MCP status:
-{
-  "status": "healthy",
-  "architecture": "MCP-based",
-  "services": {
-    "db_postgresql": true,
-    "db_redis": true,
-    "mcp_openmeteo": true,
-    "mcp_aviationstack": true,
-    "mcp_googlemaps": false  // if no API key
-  }
-}
-```
-
-> **Note**: MCP servers provide standardized access to external APIs. If MCP servers are unavailable, 
-> the system automatically falls back to direct API calls. See `MCP_INTEGRATION.md` for details.
-
-## Local Development
-
-### Backend
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 5000
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm start
-```
-
-Create a `.env` file in `frontend/` (or copy `.env.example`) to point the dashboard at the backend when running locally without Docker:
+### 4. Health Check
 
 ```
-REACT_APP_API_URL=http://localhost:5000
-```
 
-## 📡 API Overview
+Expected response includes service status for PostgreSQL, Redis, and MCP servers.
+
+## API Endpoints
 
 ### Core Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Service health check with MCP status |
-| `/health` | GET | Comprehensive health check (DB, Redis, MCP servers) |
+- `GET /health` - Health check (DB, Redis, MCP servers)
+- `GET /docs` - Interactive API documentation
 
-### Weather Endpoints (MCP-Powered)
+### Weather (MCP-Powered)
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/weather/current/{airport_code}` | GET | Current weather conditions |
-| `/weather/forecast/{airport_code}` | GET | Hourly forecast (up to 7 days) |
-| `/weather/aviation-briefing/{airport_code}` | GET | Aviation weather briefing |
+- `GET /weather/current/{airport_code}` - Current conditions
+- `GET /weather/forecast/{airport_code}` - Hourly forecast (7 days)
+- `GET /weather/aviation-briefing/{airport_code}` - Aviation briefing
 
-### Flight Tracking Endpoints (MCP-Powered)
+### Flights (MCP-Powered)
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/flights/real-time` | GET | Live flight data with filters |
-| `/flights/historical` | GET | Historical flight records |
-| `/flights/route-statistics` | GET | Route delay statistics (30-90 days) |
-| `/flights/airport-info/{code}` | GET | Airport information |
+- `GET /flights/real-time` - Live flight data with filters
+- `GET /flights/historical` - Historical records
+- `GET /flights/route-statistics` - Route delay statistics
+- `GET /flights/airport-info/{code}` - Airport information
 
-### Prediction Endpoints
+### Predictions
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/predict/enhanced` | POST | Enhanced delay prediction with SHAP |
-| `/score` | POST | Score single flight with explainability |
-| `/insights` | GET | AI-generated insights via Langflow |
+- `POST /predict/enhanced` - Delay prediction with SHAP explainability
+- `POST /score` - Score single flight
+- `GET /insights` - AI-generated insights (Langflow)
 
-### Location Endpoints (Optional - Requires Google Maps API)
+### Location (Google Maps)
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/location/airport/{code}` | GET | Airport location with timezone |
-| `/location/route-distance` | GET | Distance between airports |
-| `/location/nearby-airports` | GET | Find airports within radius |
+- `GET /location/airport/{code}` - Airport coordinates and timezone
+- `GET /location/route-distance` - Distance between airports
+- `GET /location/nearby-airports` - Airports within radius
 
-**Example Request:**
+**Rate Limits**: All endpoints are rate-limited per IP address. Configure `API_RATE_LIMIT_PER_MINUTE` in `.env`.
 
-```bash
-# Get real-time flights from DXB to LHR
-curl "http://localhost:8000/flights/real-time?dep_iata=DXB&arr_iata=LHR&limit=10"
-
-# Get current weather at Dubai Airport
-curl "http://localhost:8000/weather/current/DXB"
-
-# Enhanced prediction with all data sources
-curl -X POST "http://localhost:8000/predict/enhanced" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "flight_iata": "EK230",
-    "dep_iata": "DXB",
-    "arr_iata": "LHR",
-    "scheduled_departure": "2024-01-20T14:30:00"
-  }'
-```
-
-The frontend dashboard calls these endpoints through `frontend/src/utils/api.js` 
-and renders live probabilities, SHAP factors, and LLM-generated explanations 
-with graceful fallbacks when services are offline.
-
-## 🔌 Model Context Protocol (MCP) Integration
-
-PreFlight AI uses **MCP servers** for standardized access to external data sources:
-
-### Architecture
+**Example:**
 
 ```
-Frontend → Backend (FastAPI)
-              ↓
-         MCP Clients (with health checks)
-              ↓
-         MCP Servers (HTTP endpoints)
-              ↓
-         External APIs (Open-Meteo, AviationStack, Google Maps)
+
+## Model Context Protocol (MCP)
+
+PreFlight AI uses MCP servers for standardized data access:
+
+```
+Frontend → Backend (FastAPI) → MCP Clients → MCP Servers → External APIs
 ```
 
-### Benefits
+**MCP Servers:**
+- **Open-Meteo**: Weather data (free, no API key)
+- **AviationStack**: Flight tracking (requires API key)
+- **Google Maps**: Geocoding (optional)
 
-- ✅ **Standardized Interface**: Consistent tool-based API across all data sources
-- ✅ **Automatic Fallback**: Graceful degradation to direct APIs if MCP unavailable
-- ✅ **Health Monitoring**: Real-time status of all MCP connections
-- ✅ **Production Ready**: Comprehensive error handling and logging
-- ✅ **Caching**: Intelligent caching at MCP server level
+**Features:**
+- Automatic fallback to direct API calls if MCP unavailable
+- Health monitoring for all connections
+- Intelligent caching at MCP server level
 
-### MCP Servers Used
+## Security Configuration
 
-1. **Open-Meteo MCP Server** (Weather Data)
-   - Source: https://github.com/modelcontextprotocol/servers/tree/main/src/weather
-   - Free, unlimited access
-   - No API key required
-   
-2. **AviationStack MCP Server** (Flight Tracking)
-   - Custom MCP adapter for AviationStack API
-   - Real-time + historical flight data
-   - Requires API key for fallback
-   
-3. **Google Maps MCP Client** (Geocoding - Optional)
-   - Custom wrapper around Google Maps API
-   - Only enabled if API key provided
-   - Graceful degradation if unavailable
+**Production Checklist:**
 
-**For detailed MCP setup instructions, see [`MCP_INTEGRATION.md`](./MCP_INTEGRATION.md)**
+1. **Environment Variables**: Never commit `.env` file. Use secrets management.
+2. **CORS**: Set `ALLOWED_ORIGINS` to specific domains (no wildcards).
+3. **Rate Limiting**: Configure `API_RATE_LIMIT_PER_MINUTE` for your load.
+4. **API Keys**: Restrict by IP address and API endpoints in provider dashboards.
+5. **HTTPS**: Use reverse proxy (nginx, Traefik) with SSL certificates.
+6. **Resource Limits**: Adjust Docker resource limits in `docker-compose.yml`.
+7. **Monitoring**: Implement health checks and alerting.
 
-## 🤖 Langflow + Ollama
+**Validation**: Configuration validates on startup. Application fails fast in production if validation fails.
 
-1. Run `langflow run` (if developing outside Docker) and open `http://localhost:7860`.
-2. Build a flow: `Input → Python (parse SHAP) → LLM (Ollama) → Output`.
-3. Configure the Ollama node to hit `http://ollama:11434` in Docker or
-   `http://localhost:11434` when running locally.
-4. Copy the Flow ID and update `LANGFLOW_URL` accordingly (either set the
-   environment variable or change the default in `backend/app/services/langflow_client.py`).
+## Langflow Integration
 
-With the flow configured, the backend will produce natural-language
-explanations for each scored flight while still working even if Langflow/Ollama
-are offline (fallback messages are returned).
+Configure Langflow flow for AI-generated insights:
+1. Access Langflow at http://localhost:7860
+2. Create flow: `Input → Python (parse SHAP) → LLM (Ollama) → Output`
+3. Configure Ollama node: `http://ollama:11434`
+4. Update `LANGFLOW_URL` with flow ID
 
-## Testing
+System maintains functionality with fallback messages if Langflow/Ollama unavailable.
 
-- Frontend: `npm test` inside `frontend/`
-- Backend: add FastAPI tests under `backend/tests` (pytest recommended)
+## Production Deployment
 
-## Troubleshooting
+**Before deploying to production:**
 
-- **CORS errors:** ensure `REACT_APP_API_URL` points at the FastAPI origin in the current environment.
-- **Langflow timeouts:** the backend returns a readable fallback message so the dashboard stays usable even if Langflow or Ollama are down.
-- **Docker build failures:** prune previous images or rebuild with `docker-compose build --no-cache`.
+1. Review and configure all environment variables in `.env`
+2. Enable HTTPS with reverse proxy
+3. Configure monitoring and logging
+4. Set up database backups
+5. Test health endpoints
+6. Verify rate limiting
+7. Validate CORS configuration
+8. Remove source code volume mount from `docker-compose.yml`
 
-Happy flying! 🚀✈️
+**Resource Requirements:**
+- Backend: 0.5-2 CPU cores, 512MB-2GB RAM
+- Frontend: Minimal (static build can be served separately)
+- Database: Based on expected data volume
+- Redis: Minimal (cache only)

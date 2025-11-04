@@ -1,14 +1,27 @@
 from datetime import datetime, timedelta
 from typing import List, Optional
+import logging
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from slowapi.errors import RateLimitExceeded
 
 from app.models.explain import explain_prediction
 from app.models.predictor import predict_delay
 from app.schemas.flight import FlightRecord
 from app.services.langflow_client import generate_explanation
+
+# Security middleware
+from app.middleware.security import (
+    SecurityHeadersMiddleware,
+    validate_airport_code,
+    validate_flight_code,
+    validate_date,
+    validate_iso_datetime,
+    validate_limit
+)
+from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 
 # Database imports
 import sys
@@ -23,6 +36,13 @@ from database.models import (
     Alert,
     WeatherSnapshot,
 )
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # MCP Client imports (with fallback to legacy API clients)
 try:
@@ -53,13 +73,25 @@ app = FastAPI(
     description="Intelligent flight delay prediction with real-time weather and flight tracking",
 )
 
+# Add security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Configure CORS for production
+# SECURITY: Replace "*" with actual frontend domain in production
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
+    max_age=600,
 )
+
+# Add rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # Initialize MCP clients or legacy API clients
 if USE_MCP_CLIENTS:
@@ -170,13 +202,17 @@ def insights():
 
 
 @app.get("/weather/current/{airport_code}")
-def get_current_weather(airport_code: str, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+def get_current_weather(request: Request, airport_code: str, db: Session = Depends(get_db)):
     """
     Get current weather conditions for an airport.
 
     Args:
         airport_code: IATA airport code (e.g., DXB, LHR, JFK)
     """
+    # Validate and sanitize input
+    airport_code = validate_airport_code(airport_code)
+    
     try:
         weather_data = weather_client.get_current_weather(airport_code)
 
@@ -207,8 +243,12 @@ def get_current_weather(airport_code: str, db: Session = Depends(get_db)):
 
 
 @app.get("/weather/forecast/{airport_code}")
+@limiter.limit("20/minute")
 def get_weather_forecast(
-    airport_code: str, hours: int = Query(48, ge=1, le=168), db: Session = Depends(get_db)
+    request: Request,
+    airport_code: str, 
+    hours: int = Query(48, ge=1, le=168), 
+    db: Session = Depends(get_db)
 ):
     """
     Get hourly weather forecast for an airport.
@@ -217,6 +257,10 @@ def get_weather_forecast(
         airport_code: IATA airport code
         hours: Number of hours to forecast (1-168)
     """
+    # Validate and sanitize inputs
+    airport_code = validate_airport_code(airport_code)
+    hours = validate_limit(hours, min_val=1, max_val=168)
+    
     try:
         forecast_data = weather_client.get_hourly_forecast(airport_code, hours)
 
@@ -233,13 +277,17 @@ def get_weather_forecast(
 
 
 @app.get("/weather/aviation-briefing/{airport_code}")
-def get_aviation_briefing(airport_code: str):
+@limiter.limit("20/minute")
+def get_aviation_briefing(request: Request, airport_code: str):
     """
     Get comprehensive aviation weather briefing.
 
     Args:
         airport_code: IATA airport code
     """
+    # Validate and sanitize input
+    airport_code = validate_airport_code(airport_code)
+    
     try:
         briefing = weather_client.get_aviation_weather_briefing(airport_code)
         return briefing
@@ -253,12 +301,22 @@ def get_aviation_briefing(airport_code: str):
 
 
 @app.get("/flights/real-time")
+@limiter.limit("20/minute")
 def get_real_time_flights(
+    request: Request,
     flight_iata: Optional[str] = None,
     dep_iata: Optional[str] = None,
     arr_iata: Optional[str] = None,
     limit: int = Query(100, ge=1, le=100),
 ):
+    # Validate and sanitize inputs
+    if flight_iata:
+        flight_iata = validate_flight_code(flight_iata)
+    if dep_iata:
+        dep_iata = validate_airport_code(dep_iata)
+    if arr_iata:
+        arr_iata = validate_airport_code(arr_iata)
+    limit = validate_limit(limit, min_val=1, max_val=100)
     """
     Get real-time flight information.
 
@@ -292,7 +350,9 @@ def get_real_time_flights(
 
 
 @app.get("/flights/historical")
+@limiter.limit("20/minute")
 def get_historical_flights(
+    request: Request,
     flight_date: str,
     flight_iata: Optional[str] = None,
     dep_iata: Optional[str] = None,
@@ -307,6 +367,15 @@ def get_historical_flights(
         dep_iata: Departure airport IATA code
         arr_iata: Arrival airport IATA code
     """
+    # Validate and sanitize inputs
+    flight_date = validate_date(flight_date)
+    if flight_iata:
+        flight_iata = validate_flight_code(flight_iata)
+    if dep_iata:
+        dep_iata = validate_airport_code(dep_iata)
+    if arr_iata:
+        arr_iata = validate_airport_code(arr_iata)
+    
     try:
         flights = aviation_client.get_historical_flights(
             flight_date=flight_date,
@@ -332,7 +401,9 @@ def get_historical_flights(
 
 
 @app.get("/flights/route-statistics")
+@limiter.limit("20/minute")
 def get_route_statistics(
+    request: Request,
     dep_iata: str,
     arr_iata: str,
     days_back: int = Query(30, ge=1, le=90),
@@ -345,6 +416,11 @@ def get_route_statistics(
         arr_iata: Arrival airport IATA code
         days_back: Number of days to analyze (1-90)
     """
+    # Validate and sanitize inputs
+    dep_iata = validate_airport_code(dep_iata)
+    arr_iata = validate_airport_code(arr_iata)
+    days_back = validate_limit(days_back, min_val=1, max_val=90)
+    
     try:
         route_history = aviation_client.get_flight_route_history(
             dep_iata=dep_iata, arr_iata=arr_iata, days_back=days_back
@@ -372,8 +448,12 @@ def get_route_statistics(
 
 
 @app.get("/flights/airport-info/{airport_code}")
-def get_airport_info(airport_code: str):
+@limiter.limit("30/minute")
+def get_airport_info(request: Request, airport_code: str):
     """Get detailed airport information."""
+    # Validate and sanitize input
+    airport_code = validate_airport_code(airport_code)
+    
     try:
         airport_info = aviation_client.get_airport_info(airport_code)
         return airport_info
@@ -387,7 +467,9 @@ def get_airport_info(airport_code: str):
 
 
 @app.post("/predict/enhanced")
+@limiter.limit("10/minute")
 def enhanced_prediction(
+    request: Request,
     flight_iata: str,
     dep_iata: str,
     arr_iata: str,
@@ -404,6 +486,12 @@ def enhanced_prediction(
         arr_iata: Arrival airport code
         scheduled_departure: Scheduled departure time (ISO format)
     """
+    # Validate and sanitize inputs
+    flight_iata = validate_flight_code(flight_iata)
+    dep_iata = validate_airport_code(dep_iata)
+    arr_iata = validate_airport_code(arr_iata)
+    scheduled_departure = validate_iso_datetime(scheduled_departure)
+    
     try:
         departure_time = datetime.fromisoformat(scheduled_departure)
 
@@ -575,7 +663,9 @@ def get_model_accuracy(days: int = Query(7, ge=1, le=90), db: Session = Depends(
 
 
 @app.get("/location/airport/{airport_code}")
+@limiter.limit("30/minute")
 def get_airport_location_data(
+    request: Request,
     airport_code: str,
     force_refresh: bool = Query(False),
     db: Session = Depends(get_db)
@@ -588,6 +678,8 @@ def get_airport_location_data(
         airport_code: IATA airport code (e.g., DXB, LHR, JFK)
         force_refresh: Force refresh from Google Maps API
     """
+    # Validate and sanitize input
+    airport_code = validate_airport_code(airport_code)
     if USE_MCP_CLIENTS and googlemaps_client:
         # Use MCP Google Maps client if available
         if not googlemaps_client.is_enabled():
@@ -653,7 +745,9 @@ def get_airport_location_data(
 
 
 @app.get("/location/route-distance")
+@limiter.limit("20/minute")
 def get_route_distance_data(
+    request: Request,
     origin: str = Query(..., description="Origin airport code"),
     destination: str = Query(..., description="Destination airport code"),
     force_refresh: bool = Query(False),
@@ -667,6 +761,10 @@ def get_route_distance_data(
         destination: Destination airport IATA code
         force_refresh: Force refresh from Google Maps API
     """
+    # Validate and sanitize inputs
+    origin = validate_airport_code(origin)
+    destination = validate_airport_code(destination)
+    
     from services.location_service import LocationService
     from external_apis import GoogleMapsError
     
@@ -700,7 +798,9 @@ def get_route_distance_data(
 
 
 @app.get("/location/nearby-airports")
+@limiter.limit("20/minute")
 def get_nearby_airports_data(
+    request: Request,
     latitude: float = Query(..., ge=-90, le=90),
     longitude: float = Query(..., ge=-180, le=180),
     radius_km: float = Query(100, ge=1, le=500),

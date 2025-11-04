@@ -27,26 +27,27 @@ services:
       - AVIATIONSTACK_API_KEY=${AVIATIONSTACK_API_KEY}
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
       
-      # Legacy API Keys (deprecated - using MCP servers now)
-      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
-      - NOAA_API_ENABLED=false
-      
-      # External APIs - Notifications
-      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
-      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
-      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
-      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      # External APIs - Notifications (Optional)
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER:-}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY:-}
       - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL:-alerts@preflight.ai}
-      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      
+      # Security Configuration
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8000}
+      - API_RATE_LIMIT_PER_MINUTE=${API_RATE_LIMIT_PER_MINUTE:-60/minute}
       
       # Application Settings
-      - APP_ENV=production
-      - LOG_LEVEL=INFO
+      - APP_ENV=${APP_ENV:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - app_data:/app_data
+      # PRODUCTION: Comment out source code mount to prevent runtime modification
       - ./backend:/app
     ports:
-      - "5000:5000"
+      - "8000:5000"
     depends_on:
       - postgres
       - redis
@@ -55,8 +56,17 @@ services:
       - openmeteo-mcp
       - aviationstack-mcp
     restart: unless-stopped
+    # Resource limits for production stability
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
