@@ -1,36 +1,240 @@
 version: '3.8'
 
 services:
+  # ============================================================================
+  # Core Application Services
+  # ============================================================================
+  
   backend:
     build: ./backend
     environment:
-      - LANGFLOW_URL=http://langflow:7860/api/v1/predict/<FLOW_ID>
+      # Langflow Integration
+      - LANGFLOW_URL=http://langflow:7860/api/v1/predict/${LANGFLOW_FLOW_ID}
+      
+      # Database Connections
+      - DATABASE_URL=postgresql://preflight:preflight_secure_pass@postgres:5432/preflight_db
+      - REDIS_URL=redis://redis:6379/0
+      
+      # External APIs - Weather
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
+      - NOAA_API_ENABLED=true
+      
+      # External APIs - Flight Tracking
+      - AVIATIONSTACK_API_KEY=${AVIATIONSTACK_API_KEY}
+      
+      # External APIs - Notifications
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL:-alerts@preflight.ai}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      
+      # Application Settings
+      - APP_ENV=production
+      - LOG_LEVEL=INFO
+    volumes:
+      - app_data:/app_data
+      - ./backend:/app
     ports:
       - "5000:5000"
     depends_on:
+      - postgres
+      - redis
       - langflow
       - ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   frontend:
     build: ./frontend
     environment:
-      - REACT_APP_API_URL=http://backend:5000
+      - REACT_APP_API_URL=http://localhost:5000
+      - NODE_ENV=production
     ports:
       - "3000:3000"
+    depends_on:
+      - backend
     stdin_open: true
     tty: true
+    restart: unless-stopped
+
+  # ============================================================================
+  # AI & ML Services
+  # ============================================================================
 
   langflow:
-    image: gojek/langflow
+    image: langflowai/langflow:latest
+    environment:
+      - LANGFLOW_DATABASE_URL=postgresql://preflight:preflight_secure_pass@postgres:5432/langflow_db
+      - LANGFLOW_CONFIG_DIR=/app/langflow_config
+    volumes:
+      - langflow_data:/app/langflow
+      - ./backend/langflow_flow:/app/langflow_flow
     ports:
       - "7860:7860"
+    depends_on:
+      - postgres
+      - ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   ollama:
-    image: ollama/ollama
+    image: ollama/ollama:latest
     ports:
       - "11434:11434"
     volumes:
-      - ollama-models:/root/.ollama
+      - ollama_models:/root/.ollama
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # For CPU-only systems, remove the deploy section above
+
+  # ============================================================================
+  # Database Services
+  # ============================================================================
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=preflight
+      - POSTGRES_PASSWORD=preflight_secure_pass
+      - POSTGRES_MULTIPLE_DATABASES=preflight_db,langflow_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./scripts/create_multiple_databases.sh:/docker-entrypoint-initdb.d/00-create-dbs.sh
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U preflight"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass redis_secure_pass
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Database Management Tools
+  # ============================================================================
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@preflight.ai
+      - PGADMIN_DEFAULT_PASSWORD=admin_secure_pass
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    profiles:
+      - tools
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379:0:redis_secure_pass
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    profiles:
+      - tools
+
+  # ============================================================================
+  # Monitoring & Observability (Optional)
+  # ============================================================================
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin_secure_pass
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+# ============================================================================
+# Volumes
+# ============================================================================
 
 volumes:
-  ollama-models:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  ollama_models:
+    driver: local
+  langflow_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  app_data:
+    driver: local
+
+# ============================================================================
+# Networks
+# ============================================================================
+
+networks:
+  default:
+    name: preflight_network
+    driver: bridge
