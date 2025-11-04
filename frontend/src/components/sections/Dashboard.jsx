@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import styled from 'styled-components';
 import '../dashboard.css';
+import { fetchFlights, getInsights, scoreFlight } from '../../utils/api';
 
 const DashboardContainer = styled.div`
   width: 100%;
@@ -797,6 +798,35 @@ const FooterSection = styled.footer`
   }
 `;
 
+const DEFAULT_FACTORS = { crosswind: 0.2, gateOccupancy: 0.17, routeDelay: 0.14 };
+
+const clampFactor = (value = 0) => {
+  const numeric = Number.isFinite(value) ? Math.abs(value) : 0;
+  return Math.max(0, Math.min(1, numeric));
+};
+
+const shapToFactors = (shap) => {
+  if (!shap) return null;
+  return {
+    crosswind: clampFactor(shap.crosswind),
+    gateOccupancy: clampFactor(shap.atc ?? shap.gate_congestion),
+    routeDelay: clampFactor(shap.route_delay ?? shap.visibility),
+  };
+};
+
+const buildDefaultPayload = (flightId) => {
+  const now = new Date();
+  const arrival = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  return {
+    flight_id: flightId,
+    scheduled_departure: now.toISOString(),
+    scheduled_arrival: arrival.toISOString(),
+    weather: { wind_kts: 12, visibility_km: 8 },
+    gate: 'A12',
+    atc: 'flow control advisory',
+  };
+};
+
 const mockFlights = [
   {
     id: 'EK230',
@@ -808,7 +838,15 @@ const mockFlights = [
     reason: 'Gate Congestion',
     scheduledTime: '08:30',
     predictedTime: '08:53',
-    factors: { crosswind: 0.23, gateOccupancy: 0.17, routeDelay: 0.14 }
+    factors: { crosswind: 0.23, gateOccupancy: 0.17, routeDelay: 0.14 },
+    scorePayload: {
+      flight_id: 'EK230',
+      scheduled_departure: '2024-04-01T08:30:00Z',
+      scheduled_arrival: '2024-04-01T12:30:00Z',
+      weather: { wind_kts: 18, visibility_km: 6 },
+      gate: 'A12',
+      atc: 'ground hold extension',
+    },
   },
   {
     id: 'BA115',
@@ -820,7 +858,15 @@ const mockFlights = [
     reason: 'Minor Weather',
     scheduledTime: '10:15',
     predictedTime: '10:27',
-    factors: { crosswind: 0.12, gateOccupancy: 0.08, routeDelay: 0.10 }
+    factors: { crosswind: 0.12, gateOccupancy: 0.08, routeDelay: 0.1 },
+    scorePayload: {
+      flight_id: 'BA115',
+      scheduled_departure: '2024-04-01T10:15:00Z',
+      scheduled_arrival: '2024-04-01T14:45:00Z',
+      weather: { wind_kts: 12, visibility_km: 8 },
+      gate: 'B05',
+      atc: 'metering in effect',
+    },
   },
   {
     id: 'SQ006',
@@ -832,7 +878,15 @@ const mockFlights = [
     reason: 'ATC Flow Control',
     scheduledTime: '22:45',
     predictedTime: '23:30',
-    factors: { crosswind: 0.35, gateOccupancy: 0.28, routeDelay: 0.29 }
+    factors: { crosswind: 0.35, gateOccupancy: 0.28, routeDelay: 0.29 },
+    scorePayload: {
+      flight_id: 'SQ006',
+      scheduled_departure: '2024-04-01T22:45:00Z',
+      scheduled_arrival: '2024-04-02T05:15:00Z',
+      weather: { wind_kts: 22, visibility_km: 5 },
+      gate: 'C18',
+      atc: 'holding pattern',
+    },
   },
   {
     id: 'AA501',
@@ -844,7 +898,15 @@ const mockFlights = [
     reason: 'Normal Operations',
     scheduledTime: '14:00',
     predictedTime: '14:08',
-    factors: { crosswind: 0.08, gateOccupancy: 0.05, routeDelay: 0.06 }
+    factors: { crosswind: 0.08, gateOccupancy: 0.05, routeDelay: 0.06 },
+    scorePayload: {
+      flight_id: 'AA501',
+      scheduled_departure: '2024-04-01T14:00:00Z',
+      scheduled_arrival: '2024-04-01T22:30:00Z',
+      weather: { wind_kts: 8, visibility_km: 10 },
+      gate: 'D07',
+      atc: 'normal operations',
+    },
   },
   {
     id: 'LH720',
@@ -856,7 +918,15 @@ const mockFlights = [
     reason: 'Weather Pattern',
     scheduledTime: '16:30',
     predictedTime: '16:48',
-    factors: { crosswind: 0.15, gateOccupancy: 0.12, routeDelay: 0.13 }
+    factors: { crosswind: 0.15, gateOccupancy: 0.12, routeDelay: 0.13 },
+    scorePayload: {
+      flight_id: 'LH720',
+      scheduled_departure: '2024-04-01T16:30:00Z',
+      scheduled_arrival: '2024-04-02T02:10:00Z',
+      weather: { wind_kts: 14, visibility_km: 7 },
+      gate: 'E11',
+      atc: 'sequencing program',
+    },
   }
 ];
 
@@ -885,16 +955,104 @@ const mockAlerts = [
 ];
 
 const Dashboard = () => {
-  const [selectedFlight, setSelectedFlight] = useState(mockFlights[0]);
+  const [flights, setFlights] = useState(mockFlights);
+  const [selectedFlightId, setSelectedFlightId] = useState(mockFlights[0]?.id ?? null);
   const [alerts, setAlerts] = useState(mockAlerts);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [scoreDetails, setScoreDetails] = useState(null);
+  const [insightsText, setInsightsText] = useState('');
+  const [loadingFlights, setLoadingFlights] = useState(false);
+  const [loadingScore, setLoadingScore] = useState(false);
+  const [apiError, setApiError] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname;
 
+  const selectedFlight = useMemo(
+    () => flights.find((flight) => flight.id === selectedFlightId) || flights[0] || null,
+    [flights, selectedFlightId]
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    async function hydrateFromBackend() {
+      setLoadingFlights(true);
+      const [flightResult, insightsResult] = await Promise.allSettled([
+        fetchFlights(),
+        getInsights(),
+      ]);
+      if (!active) {
+        return;
+      }
+
+      if (flightResult.status === 'fulfilled' && Array.isArray(flightResult.value)) {
+        setFlights((prev) => {
+          const flightMap = new Map(prev.map((flight) => [flight.id, flight]));
+          flightResult.value.forEach((item) => {
+            const id = item.flight_id || item.id;
+            if (!id) return;
+            const existing = flightMap.get(id) || {
+              id,
+              origin: item.origin || '—',
+              destination: item.dest || item.destination || '—',
+              delayProb: typeof item.delay_prob === 'number' ? item.delay_prob : 0,
+              predictedDelay: 0,
+              status: item.status || 'Scheduled',
+              reason: 'Awaiting model analysis',
+              scheduledTime: '—',
+              predictedTime: '—',
+              factors: DEFAULT_FACTORS,
+              scorePayload: buildDefaultPayload(id),
+            };
+            const baseDelay =
+              typeof item.delay_prob === 'number' ? item.delay_prob : existing.delayProb;
+            flightMap.set(id, {
+              ...existing,
+              origin: item.origin ?? existing.origin,
+              destination: item.dest ?? item.destination ?? existing.destination,
+              delayProb: baseDelay,
+              predictedDelay: Math.round(baseDelay * 40),
+              status: item.status ?? existing.status,
+            });
+          });
+          return Array.from(flightMap.values());
+        });
+        setSelectedFlightId((prev) => prev || (flightResult.value[0]?.flight_id ?? flightResult.value[0]?.id ?? null));
+      } else if (flightResult.status === 'rejected') {
+        const reason =
+          flightResult.reason?.message || 'Unable to load flights from backend';
+        setApiError(reason);
+      }
+
+      if (insightsResult.status === 'fulfilled') {
+        const payload = insightsResult.value;
+        setInsightsText(
+          typeof payload === 'string'
+            ? payload
+            : payload?.explanation || payload?.message || 'Insights service available'
+        );
+      } else if (insightsResult.status === 'rejected') {
+        setInsightsText('Langflow insights offline - showing cached copy.');
+      }
+
+      setLoadingFlights(false);
+    }
+
+    hydrateFromBackend().catch((err) => {
+      if (!active) return;
+      setApiError(err.message || 'Backend unreachable');
+      setLoadingFlights(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   useEffect(() => {
     const interval = setInterval(() => {
-      setAlerts(prev => {
+      setAlerts((prev) => {
         const newAlert = prev[prev.length - 1];
         return [newAlert, ...prev.slice(0, -1)];
       });
@@ -902,6 +1060,51 @@ const Dashboard = () => {
 
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!selectedFlight?.scorePayload) {
+      setScoreDetails(null);
+      return;
+    }
+
+    let active = true;
+    setLoadingScore(true);
+
+    const payload = {
+      ...selectedFlight.scorePayload,
+      flight_id: selectedFlight.scorePayload.flight_id || selectedFlight.id,
+    };
+
+    scoreFlight(payload)
+      .then((result) => {
+        if (!active) return;
+        setScoreDetails(result);
+        setFlights((prev) =>
+          prev.map((flight) =>
+            flight.id === selectedFlight.id
+              ? {
+                  ...flight,
+                  delayProb: result.delay_prob ?? flight.delayProb,
+                  predictedDelay: result.predicted_delay_minutes ?? flight.predictedDelay,
+                  factors: shapToFactors(result.shap) || flight.factors,
+                }
+              : flight
+          )
+        );
+      })
+      .catch((err) => {
+        if (!active) return;
+        setApiError(err.message || 'Failed to score flight');
+        setScoreDetails(null);
+      })
+      .finally(() => {
+        if (active) setLoadingScore(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedFlight?.id, selectedFlight?.scorePayload]);
 
   const getProbabilityClass = (prob) => {
     if (prob < 0.4) return 'green';
@@ -911,6 +1114,47 @@ const Dashboard = () => {
 
   const getFlightProbability = (flight) => {
     return Math.round(flight.delayProb * 100);
+  };
+
+  const detailProbability =
+    scoreDetails?.delay_prob ?? selectedFlight?.delayProb ?? 0;
+  const detailDelayMinutes =
+    scoreDetails?.predicted_delay_minutes ?? selectedFlight?.predictedDelay ?? 0;
+
+  const factorValues = useMemo(() => {
+    if (scoreDetails?.shap) {
+      return {
+        ...DEFAULT_FACTORS,
+        ...shapToFactors(scoreDetails.shap),
+      };
+    }
+    return selectedFlight?.factors || DEFAULT_FACTORS;
+  }, [scoreDetails, selectedFlight]);
+
+  const explanationText =
+    scoreDetails?.explanation ||
+    'Model explanation pending. Check Langflow or Ollama connectivity if this persists.';
+
+  const insightsCopy =
+    insightsText ||
+    'Weather-related congestion increased average delay risk by 18% across major hubs this morning. ATC flow control measures are in effect at 5 international airports. System recommends prioritizing gate allocation for high-risk flights and pre-notifying crews of potential delays beyond 20 minutes.';
+
+  const statusBannerStyle = {
+    background: 'rgba(182, 255, 43, 0.06)',
+    border: '1px solid rgba(182, 255, 43, 0.25)',
+    color: '#B6FF2B',
+    padding: '0.75rem 1rem',
+    borderRadius: '6px',
+    marginBottom: '1rem',
+    fontSize: '0.85rem',
+    letterSpacing: '0.3px',
+  };
+
+  const errorBannerStyle = {
+    ...statusBannerStyle,
+    background: 'rgba(255, 100, 100, 0.1)',
+    border: '1px solid rgba(255, 100, 100, 0.35)',
+    color: '#ff7a7a',
   };
 
   return (
@@ -979,6 +1223,12 @@ const Dashboard = () => {
 
         <FlightsSection>
           <div>
+            {apiError && (
+              <div style={errorBannerStyle}>{apiError}</div>
+            )}
+            {loadingFlights && !apiError && (
+              <div style={statusBannerStyle}>Syncing flights with backend…</div>
+            )}
             <FlightsTable>
               <SearchBar>
                 <input
@@ -996,25 +1246,35 @@ const Dashboard = () => {
               </div>
 
               <div className="table-body">
-                {mockFlights.map((flight, idx) => (
-                  <motion.div
-                    key={flight.id}
-                    className={`table-row ${selectedFlight.id === flight.id ? 'selected' : ''}`}
-                    onClick={() => setSelectedFlight(flight)}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.05 }}
-                    whileHover={{ backgroundColor: 'rgba(182, 255, 43, 0.08)' }}
-                  >
-                    <div className="flight-id">{flight.id}</div>
-                    <div className="route">{flight.origin} → {flight.destination}</div>
-                    <div className={`delay-probability ${getProbabilityClass(flight.delayProb)}`}>
-                      {getFlightProbability(flight)}%
-                    </div>
-                    <div className="predicted-delay">{flight.predictedDelay} min</div>
-                    <div className="status">{flight.status}</div>
-                  </motion.div>
-                ))}
+                {flights.length === 0 ? (
+                  <div style={{ padding: '1.2rem', color: 'rgba(255, 255, 255, 0.6)' }}>
+                    No flights available. Try again shortly.
+                  </div>
+                ) : (
+                  flights.map((flight, idx) => (
+                    <motion.div
+                      key={flight.id}
+                      className={`table-row ${selectedFlight?.id === flight.id ? 'selected' : ''}`}
+                      onClick={() => setSelectedFlightId(flight.id)}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.05 }}
+                      whileHover={{ backgroundColor: 'rgba(182, 255, 43, 0.08)' }}
+                    >
+                      <div className="flight-id">{flight.id}</div>
+                      <div className="route">
+                        {flight.origin} → {flight.destination}
+                      </div>
+                      <div
+                        className={`delay-probability ${getProbabilityClass(flight.delayProb)}`}
+                      >
+                        {getFlightProbability(flight)}%
+                      </div>
+                      <div className="predicted-delay">{flight.predictedDelay} min</div>
+                      <div className="status">{flight.status}</div>
+                    </motion.div>
+                  ))
+                )}
               </div>
             </FlightsTable>
           </div>
@@ -1023,61 +1283,102 @@ const Dashboard = () => {
             initial={{ opacity: 0, x: 10 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
-            key={selectedFlight.id}
+            key={selectedFlight?.id || 'detail-panel'}
           >
-            <div className="detail-title">{selectedFlight.id} Details</div>
+            {selectedFlight ? (
+              <>
+                <div className="detail-title">{selectedFlight.id} Details</div>
 
-            <div className="detail-row">
-              <label>Route</label>
-              <span>{selectedFlight.origin} → {selectedFlight.destination}</span>
-            </div>
-
-            <div className="detail-row">
-              <label>Scheduled Departure</label>
-              <span>{selectedFlight.scheduledTime}</span>
-            </div>
-
-            <div className="detail-row">
-              <label>Predicted Departure</label>
-              <span>{selectedFlight.predictedTime}</span>
-            </div>
-
-            <div className="detail-row">
-              <label>Delay Probability</label>
-              <span>{getFlightProbability(selectedFlight)}%</span>
-            </div>
-
-            <div className="explanation">
-              <div className="exp-title">AI Explanation</div>
-              <div>{selectedFlight.reason} is the primary delay driver. High winds and gate congestion are increasing delay risk. System recommends proactive crew notification.</div>
-            </div>
-
-            <div className="contributing-factors">
-              <div className="factors-title">Top Contributing Factors</div>
-              <div className="factor-item">
-                <div className="factor-name">Crosswind Impact</div>
-                <div className="factor-bar">
-                  <div className="factor-fill" style={{ width: `${selectedFlight.factors.crosswind * 100}%` }}></div>
+                <div className="detail-row">
+                  <label>Route</label>
+                  <span>
+                    {selectedFlight.origin} → {selectedFlight.destination}
+                  </span>
                 </div>
-                <div className="factor-value">{Math.round(selectedFlight.factors.crosswind * 100)}%</div>
-              </div>
-              <div className="factor-item">
-                <div className="factor-name">Gate Occupancy</div>
-                <div className="factor-bar">
-                  <div className="factor-fill" style={{ width: `${selectedFlight.factors.gateOccupancy * 100}%` }}></div>
-                </div>
-                <div className="factor-value">{Math.round(selectedFlight.factors.gateOccupancy * 100)}%</div>
-              </div>
-              <div className="factor-item">
-                <div className="factor-name">Route Delay</div>
-                <div className="factor-bar">
-                  <div className="factor-fill" style={{ width: `${selectedFlight.factors.routeDelay * 100}%` }}></div>
-                </div>
-                <div className="factor-value">{Math.round(selectedFlight.factors.routeDelay * 100)}%</div>
-              </div>
-            </div>
 
-            <button className="notify-button">Notify Crew</button>
+                <div className="detail-row">
+                  <label>Scheduled Departure</label>
+                  <span>{selectedFlight.scheduledTime}</span>
+                </div>
+
+                <div className="detail-row">
+                  <label>Status</label>
+                  <span>{selectedFlight.status}</span>
+                </div>
+
+                <div className="detail-row">
+                  <label>Predicted Departure</label>
+                  <span>{selectedFlight.predictedTime}</span>
+                </div>
+
+                <div className="detail-row">
+                  <label>Delay Probability</label>
+                  <span>{Math.round(detailProbability * 100)}%</span>
+                </div>
+
+                <div className="detail-row">
+                  <label>Predicted Delay</label>
+                  <span>{Math.round(detailDelayMinutes)} min</span>
+                </div>
+
+                <div className="explanation">
+                  <div className="exp-title">
+                    AI Explanation {loadingScore ? '(updating...)' : ''}
+                  </div>
+                  <div>
+                    {scoreDetails?.explanation
+                      ? explanationText
+                      : `${selectedFlight.reason} is the primary delay driver. High winds and gate congestion are increasing delay risk. System recommends proactive crew notification.`}
+                  </div>
+                </div>
+
+                <div className="contributing-factors">
+                  <div className="factors-title">Top Contributing Factors</div>
+                  <div className="factor-item">
+                    <div className="factor-name">Crosswind Impact</div>
+                    <div className="factor-bar">
+                      <div
+                        className="factor-fill"
+                        style={{ width: `${factorValues.crosswind * 100}%` }}
+                      ></div>
+                    </div>
+                    <div className="factor-value">
+                      {Math.round(factorValues.crosswind * 100)}%
+                    </div>
+                  </div>
+                  <div className="factor-item">
+                    <div className="factor-name">Gate Occupancy</div>
+                    <div className="factor-bar">
+                      <div
+                        className="factor-fill"
+                        style={{ width: `${factorValues.gateOccupancy * 100}%` }}
+                      ></div>
+                    </div>
+                    <div className="factor-value">
+                      {Math.round(factorValues.gateOccupancy * 100)}%
+                    </div>
+                  </div>
+                  <div className="factor-item">
+                    <div className="factor-name">Route Delay</div>
+                    <div className="factor-bar">
+                      <div
+                        className="factor-fill"
+                        style={{ width: `${factorValues.routeDelay * 100}%` }}
+                      ></div>
+                    </div>
+                    <div className="factor-value">
+                      {Math.round(factorValues.routeDelay * 100)}%
+                    </div>
+                  </div>
+                </div>
+
+                <button className="notify-button">Notify Crew</button>
+              </>
+            ) : (
+              <div style={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                Select a flight to view prediction details.
+              </div>
+            )}
           </FlightDetailPanel>
         </FlightsSection>
 
@@ -1088,9 +1389,7 @@ const Dashboard = () => {
         >
           <InsightsSection>
             <div className="insights-title">AI Insights</div>
-            <div className="insights-text">
-              Weather-related congestion increased average delay risk by 18% across major hubs this morning. ATC flow control measures are in effect at 5 international airports. System recommends prioritizing gate allocation for high-risk flights and pre-notifying crews of potential delays beyond 20 minutes.
-            </div>
+            <div className="insights-text">{insightsCopy}</div>
 
             <div className="charts-container">
               <ChartContainer>

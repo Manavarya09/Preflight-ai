@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    environment:
+      - LANGFLOW_URL=http://langflow:7860/api/v1/predict/<FLOW_ID>
+    ports:
+      - "5000:5000"
+    depends_on:
+      - langflow
+      - ollama
+
+  frontend:
+    build: ./frontend
+    environment:
+      - REACT_APP_API_URL=http://backend:5000
+    ports:
+      - "3000:3000"
+    stdin_open: true
+    tty: true
+
+  langflow:
+    image: gojek/langflow
+    ports:
+      - "7860:7860"
+
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+
+volumes:
+  ollama-models:
