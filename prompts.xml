@@ -1,0 +1,343 @@
+<AppSpec name="PreFlightAI" version="1.0">
+  <Theme>Aviation × Predictive Analytics × MCP Server</Theme>
+  <Description>
+    Predict and explain flight delays before they happen. Frontend already exists (React/Tailwind). Create a separate backend in this repo using FastAPI. Use Langflow as the reasoning/orchestration layer and Ollama for a locally hosted open-source LLM. No external/proprietary LLMs.
+  </Description>
+
+  <Architecture>
+    MCP→FastAPI(predict)→Explainability(SHAP-like factors or rule stub)→Langflow(flow)→Ollama(LLM)→NaturalLanguageExplanation→Frontend Dashboard
+  </Architecture>
+
+  <Folders>
+    <Create>
+      backend/
+      backend/app/
+      backend/app/models/
+      backend/app/services/
+      backend/app/schemas/
+      backend/langflow_flow/
+    </Create>
+  </Folders>
+
+  <Backend>
+    <Language>Python 3.10+</Language>
+    <Framework>FastAPI</Framework>
+    <Packages>fastapi, uvicorn, requests</Packages>
+
+    <Files>
+      <File path="backend/app/main.py"><![CDATA[
+from fastapi import FastAPI, BackgroundTasks
+from app.schemas.flight import FlightRecord
+from app.models.predictor import predict_delay
+from app.models.explain import explain_prediction
+from app.services.langflow_client import generate_explanation
+
+app = FastAPI(title="PreFlight AI API", version="1.0")
+
+@app.get("/")
+def root():
+    return {"message": "PreFlight AI backend running"}
+
+@app.get("/flights")
+def flights():
+    # demo data; replace with DB/MCP when available
+    return [
+        {"flight_id":"EK230","origin":"DXB","dest":"LHR","delay_prob":0.78,"status":"likely delayed"},
+        {"flight_id":"AI101","origin":"DEL","dest":"DXB","delay_prob":0.21,"status":"on-time"}
+    ]
+
+@app.post("/score")
+def score(record: FlightRecord, background: BackgroundTasks):
+    feats = {
+        "wind": record.weather.get("wind_kts", 0),
+        "visibility": record.weather.get("visibility_km", 10),
+        "atc": len(record.atc or "")
+    }
+    prob, delay = predict_delay(feats)
+    shap = explain_prediction(feats)
+    explanation = generate_explanation({"delay_prob": prob, **shap})
+    return {
+        "flight_id": record.flight_id,
+        "delay_prob": prob,
+        "predicted_delay_minutes": delay,
+        "shap": shap,
+        "explanation": explanation
+    }
+
+@app.get("/insights")
+def insights():
+    # daily summary from Langflow based on synthetic factors
+    return generate_explanation({"delay_prob": 0.62, "crosswind": 0.23, "gate_congestion": 0.17, "route_delay": 0.14})
+      ]]></File>
+
+      <File path="backend/app/schemas/flight.py"><![CDATA[
+from pydantic import BaseModel
+
+class FlightRecord(BaseModel):
+    flight_id: str
+    scheduled_departure: str
+    scheduled_arrival: str
+    weather: dict
+    gate: str
+    atc: str
+      ]]></File>
+
+      <File path="backend/app/models/predictor.py"><![CDATA[
+import random
+
+def predict_delay(features: dict):
+    # Simple probabilistic stub; replace with Prophet/LSTM later
+    wind = features.get("wind", 0)
+    vis  = features.get("visibility", 10)
+    atc  = features.get("atc", 0)
+    prob = min(1.0, 0.2 + 0.03*wind + 0.02*(10 - vis) + 0.01*atc + random.random()*0.1)
+    delay = int(prob * 40)
+    return round(prob, 2), delay
+      ]]></File>
+
+      <File path="backend/app/models/explain.py"><![CDATA[
+def explain_prediction(features: dict):
+    # SHAP-like contributions (deterministic for demo)
+    return {
+        "crosswind": round(0.2 * (features.get("wind", 0)/20), 2),
+        "visibility": round(-0.15 * ((features.get("visibility", 10) - 10)/10), 2),
+        "atc": round(0.1 * (features.get("atc", 0)/10), 2)
+    }
+      ]]></File>
+
+      <File path="backend/app/services/langflow_client.py"><![CDATA[
+import requests
+# Replace FLOW_ID after importing the flow JSON into Langflow
+FLOW_ID = "<FLOW_ID>"
+BASE = "http://localhost:7860/api/v1/predict"
+
+def generate_explanation(payload: dict):
+    try:
+        url = f"{BASE}/{FLOW_ID}"
+        # payload is JSON; Langflow Input node expects JSON
+        resp = requests.post(url, json={"inputs": payload}, timeout=20)
+        data = resp.json()
+        # Langflow may return a string or an object; normalize to text
+        if isinstance(data, dict) and "outputs" in data:
+            out = data["outputs"]
+            return out[0] if isinstance(out, list) and out else out
+        return data
+    except Exception as e:
+        return f"Langflow not reachable: {e}"
+      ]]></File>
+
+      <File path="backend/requirements.txt"><![CDATA[
+fastapi
+uvicorn
+requests
+      ]]></File>
+
+      <File path="backend/Dockerfile"><![CDATA[
+FROM python:3.10-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5000"]
+      ]]></File>
+    </Files>
+  </Backend>
+
+  <Langflow>
+    <Explain>
+      Import the supplied flow JSON, copy the Flow ID, and set it in backend/app/services/langflow_client.py.
+    </Explain>
+
+    <Files>
+      <File path="backend/langflow_flow/preflight_ai_flow_router.json"><![CDATA[
+{
+  "name": "PreFlight_AI_Reasoner_Router",
+  "description": "Classify flight risk and explain causes using Ollama.",
+  "nodes": [
+    {
+      "id": "input_1",
+      "type": "Input",
+      "name": "Incoming_JSON",
+      "fields": {
+        "input_type": "json",
+        "example_input": "{\"delay_prob\":0.72,\"crosswind\":0.23,\"visibility\":-0.12,\"atc\":0.09}"
+      },
+      "outputs": ["router_1"]
+    },
+    {
+      "id": "router_1",
+      "type": "RouterNode",
+      "name": "Risk_Router",
+      "fields": {
+        "condition_code": "def route(inputs):\n    p = inputs.get('text', {}).get('delay_prob', 0)\n    return 'High' if p >= 0.6 else 'Low'",
+        "routes": ["High", "Low"]
+      },
+      "inputs": ["input_1"],
+      "outputs": ["py_high", "py_low"]
+    },
+    {
+      "id": "py_high",
+      "type": "PythonNode",
+      "name": "High_Context",
+      "fields": {
+        "code": "def build(inputs):\n    d = inputs.get('text', {})\n    msg = ', '.join([f\"{k} ({v:+.2f})\" for k,v in d.items() if k!='delay_prob'])\n    return {'ctx': f\"High-risk flight. Delay probability {d.get('delay_prob',0):.2f}. Factors: {msg}\"}",
+        "input_var": "text",
+        "output_var": "ctx"
+      },
+      "inputs": ["router_1"],
+      "outputs": ["llm_high"]
+    },
+    {
+      "id": "py_low",
+      "type": "PythonNode",
+      "name": "Low_Context",
+      "fields": {
+        "code": "def build(inputs):\n    d = inputs.get('text', {})\n    msg = ', '.join([f\"{k} ({v:+.2f})\" for k,v in d.items() if k!='delay_prob'])\n    return {'ctx': f\"Low-risk flight. Delay probability {d.get('delay_prob',0):.2f}. Factors: {msg}\"}",
+        "input_var": "text",
+        "output_var": "ctx"
+      },
+      "inputs": ["router_1"],
+      "outputs": ["llm_low"]
+    },
+    {
+      "id": "llm_high",
+      "type": "LLM",
+      "name": "Ollama_High",
+      "fields": {
+        "provider": "ollama",
+        "model": "mistral",
+        "base_url": "http://localhost:11434",
+        "prompt": "You are an aviation analyst. Provide a concise operational explanation and mitigation for a high-risk delay. Context: {ctx}"
+      },
+      "inputs": ["py_high"],
+      "outputs": ["out_high"]
+    },
+    {
+      "id": "llm_low",
+      "type": "LLM",
+      "name": "Ollama_Low",
+      "fields": {
+        "provider": "ollama",
+        "model": "mistral",
+        "base_url": "http://localhost:11434",
+        "prompt": "You are an aviation analyst. Provide a concise statement why delay is unlikely; note minor concerns. Context: {ctx}"
+      },
+      "inputs": ["py_low"],
+      "outputs": ["out_low"]
+    },
+    {
+      "id": "out_high",
+      "type": "Output",
+      "name": "High_Output",
+      "fields": { "output_type": "text" },
+      "inputs": ["llm_high"]
+    },
+    {
+      "id": "out_low",
+      "type": "Output",
+      "name": "Low_Output",
+      "fields": { "output_type": "text" },
+      "inputs": ["llm_low"]
+    }
+  ],
+  "connections": [
+    {"from": "input_1", "to": "router_1"},
+    {"from": "router_1", "to": "py_high"},
+    {"from": "router_1", "to": "py_low"},
+    {"from": "py_high", "to": "llm_high"},
+    {"from": "py_low", "to": "llm_low"},
+    {"from": "llm_high", "to": "out_high"},
+    {"from": "llm_low", "to": "out_low"}
+]
+}
+      ]]></File>
+    </Files>
+
+    <Ollama>
+      <Models>mistral (recommended) or llama2</Models>
+      <Commands><![CDATA[
+# Install/start Ollama locally, then pull a model:
+ollama pull mistral
+# Ollama serves on http://localhost:11434 by default
+      ]]></Commands>
+    </Ollama>
+  </Langflow>
+
+  <Docker>
+    <Compose path="docker-compose.yml"><![CDATA[
+version: '3.8'
+services:
+  backend:
+    build: ./backend
+    ports: ["5000:5000"]
+    depends_on: [langflow, ollama]
+
+  # Frontend already present; add if you want to run via compose:
+  # frontend:
+  #   build: ./frontend
+  #   ports: ["3000:3000"]
+
+  langflow:
+    image: gojek/langflow
+    ports: ["7860:7860"]
+
+  ollama:
+    image: ollama/ollama
+    ports: ["11434:11434"]
+    pull_policy: always
+    tty: true
+    stdin_open: true
+    volumes:
+      - ollama:/root/.ollama
+volumes:
+  ollama:
+    driver: local
+    ]]></Compose>
+  </Docker>
+
+  <FrontendIntegration>
+    <Env>
+      REACT_APP_API_URL=http://localhost:5000
+    </Env>
+    <Usage>
+      Fetch flights from /flights, insights from /insights, and post /score with payload:
+    </Usage>
+    <ExampleRequest><![CDATA[
+POST /score
+{
+  "flight_id":"EK230",
+  "scheduled_departure":"2025-11-04T08:30:00Z",
+  "scheduled_arrival":"2025-11-04T10:45:00Z",
+  "weather":{"wind_kts":18,"visibility_km":8},
+  "gate":"A12",
+  "atc":"holding pattern delay"
+}
+    ]]></ExampleRequest>
+    <ExampleResponse><![CDATA[
+{
+  "flight_id":"EK230",
+  "delay_prob":0.78,
+  "predicted_delay_minutes":31,
+  "shap":{"crosswind":0.18,"visibility":-0.03,"atc":0.06},
+  "explanation":"High crosswinds and congestion increase delay risk..."
+}
+    ]]></ExampleResponse>
+  </FrontendIntegration>
+
+  <Runbook>
+    <Local>
+      1) Start Ollama and pull a model: `ollama pull mistral`
+      2) Start Langflow: `langflow run` → import `backend/langflow_flow/preflight_ai_flow_router.json`, copy Flow ID.
+      3) Set FLOW_ID in `backend/app/services/langflow_client.py`.
+      4) Backend dev run: `uvicorn app.main:app --host 0.0.0.0 --port 5000`
+      5) Or run everything with Docker: `docker-compose up --build`
+    </Local>
+  </Runbook>
+
+  <JudgingAlignment>
+    <Point>Open-source only: FastAPI, Langflow, Ollama.</Point>
+    <Point>Predictive analytics with explainability surfaced to users.</Point>
+    <Point>Real-time orchestration handled by Langflow (no n8n).</Point>
+    <Point>Clean REST endpoints your existing frontend can call.</Point>
+  </JudgingAlignment>
+</AppSpec>
