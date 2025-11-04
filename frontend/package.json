@@ -23,42 +23,54 @@
     "gsap": "^3.12.2",
     "locomotive-scroll": "^4.1.4",
     "react": "^17.0.2",
-    "react-dom": "^17.0.2",
-    "react-locomotive-scroll": "^0.2.0",
-    "react-router-dom": "^6.2.2",
-<<<<<<< HEAD
-    "react-scripts": "5.0.0",
-=======
->>>>>>> 9c7ed0b (updated react scripts)
-    "styled-components": "^5.3.3",
-    "web-vitals": "^2.1.4"
-  },
-  "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
-  },
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
-  "devDependencies": {
-    "react-scripts": "^0.0.0"
-  }
-}
+    {
+      "name": "wibe-test",
+      "version": "0.1.0",
+      "private": true,
+      "dependencies": {
+        "@fontsource/kaushan-script": "^4.5.2",
+        "@fontsource/lora": "^4.5.10",
+        "@fontsource/monda": "^4.5.8",
+        "@fontsource/sirin-stencil": "^4.5.2",
+        "@splinetool/react-spline": "^4.1.0",
+        "@testing-library/jest-dom": "^6.0.0",
+        "@testing-library/react": "^14.0.0",
+        "@testing-library/user-event": "^14.4.3",
+        "ajv": "^8.17.1",
+        "framer-motion": "^6.2.8",
+        "gsap": "^3.12.2",
+        "locomotive-scroll": "^4.1.4",
+        "react": "^18.0.2",
+        "react-dom": "^18.0.2",
+        "react-locomotive-scroll": "^0.2.0",
+        "react-router-dom": "^6.2.2",
+        "react-scripts": "5.0.1",
+        "styled-components": "^5.3.3",
+        "web-vitals": "^2.1.4"
+      },
+      "scripts": {
+        "start": "react-scripts start",
+        "build": "react-scripts build",
+        "test": "react-scripts test",
+        "eject": "react-scripts eject"
+      },
+      "eslintConfig": {
+        "extends": [
+          "react-app",
+          "react-app/jest"
+        ]
+      },
+      "browserslist": {
+        "production": [
+          ">0.2%",
+          "not dead",
+          "not op_mini all"
+        ],
+        "development": [
+          "last 1 chrome version",
+          "last 1 firefox version",
+          "last 1 safari version"
+        ]
+      },
+      "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+    }
